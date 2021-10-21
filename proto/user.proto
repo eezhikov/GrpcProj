@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+option go_package = "pkg/user/service";
+
+package user_service;
+
+service User {
+  rpc AddUser(AddUserRequest) returns(AddUserResponse) {}
+  rpc RemoveUser(RemoveUserRequest) returns(RemoveUserResponse) {}
+  rpc UserList(UserListRequest) returns(UserListResponse) {}
+
+}
+message AddUserRequest {
+  string login = 1;
+  string password = 2;
+  string name = 3;
+  string phone = 4;
+}
+message AddUserResponse{
+  bool status = 1;
+}
+////
+
+message RemoveUserRequest{
+  int32 id = 1;
+}
+message RemoveUserResponse{
+  bool status = 1;
+}
+
+////
+
+message UserListRequest{
+  string fiter = 1;
+}
+message UserListResponse{
+  repeated UserList userList = 1;
+}
+message  UserList{
+  int32 id = 1;
+  string name = 2;
+  string phone = 3;
+}
+
+
