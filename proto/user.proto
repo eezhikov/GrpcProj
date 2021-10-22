@@ -31,15 +31,16 @@ message RemoveUserResponse{
 ////
 
 message UserListRequest{
-  string fiter = 1;
+  UserInfo filter = 1;
 }
 message UserListResponse{
-  repeated UserList userList = 1;
+  repeated UserInfo userList = 1;
 }
-message  UserList{
+message  UserInfo{
   int32 id = 1;
-  string name = 2;
-  string phone = 3;
+  string login = 2;
+  string name = 3;
+  string phone = 4;
 }
 
 

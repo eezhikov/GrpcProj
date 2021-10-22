@@ -1,12 +1,12 @@
 package models
 
 type UserList struct {
-	User *User
+	User []*UserInfo
 }
-type User struct {
-	Id    int
+type UserInfo struct {
+	Id       int
 	Password string
-	Login string
-	Name  string
-	Phone string
+	Login    string
+	Name     string
+	Phone    string
 }

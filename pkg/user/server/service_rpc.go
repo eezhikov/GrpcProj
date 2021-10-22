@@ -15,13 +15,13 @@ import (
 type ServiceUser struct {
 	pb.UserServer
 
-	db *pgxpool.Pool
+	db     *pgxpool.Pool
 	logger *zap.Logger
 }
 
 func NewUserService(db *pgxpool.Pool, logger *zap.Logger) *ServiceUser {
 	return &ServiceUser{
-		db: db,
+		db:     db,
 		logger: logger,
 	}
 }
@@ -33,7 +33,7 @@ func (s *ServiceUser) AddUser(ctx context.Context, request *pb.AddUserRequest) (
 	if err != nil {
 		return nil, err
 	}
-	if !match{
+	if !match {
 		err := errors.New("wrong login")
 		return nil, err
 	}
@@ -54,17 +54,16 @@ func (s *ServiceUser) AddUser(ctx context.Context, request *pb.AddUserRequest) (
 		return nil, err
 	}
 	phone := request.GetPhone()
-	if !IsPhoneValid(phone){
+	if !IsPhoneValid(phone) {
 		err := errors.New("wrong phone")
 		return nil, err
 	}
-	user := models.User{
+	user := models.UserInfo{
 		Login:    login,
 		Password: password,
 		Name:     name,
 		Phone:    phone,
 	}
-
 
 	ok, err := userRepository.AddUser(&user)
 	status := &pb.AddUserResponse{
@@ -78,14 +77,14 @@ func (s *ServiceUser) AddUser(ctx context.Context, request *pb.AddUserRequest) (
 }
 func (s *ServiceUser) RemoveUser(ctx context.Context, request *pb.RemoveUserRequest) (*pb.RemoveUserResponse, error) {
 	removeId := request.GetId()
-	if removeId <= 0{
+	if removeId <= 0 {
 		return nil, errors.New("wrong request")
 	}
 	userRepository := postgres.NewUserRepo(ctx, s.db, s.logger)
-	if userRepository.IsSetUser("", int(removeId)) == false{
+	if userRepository.IsSetUser("", int(removeId)) == false {
 		return nil, errors.New("id not found")
 	}
-	if removeId < 0{
+	if removeId < 0 {
 		return nil, errors.New("wrong id")
 	}
 
@@ -100,15 +99,34 @@ func (s *ServiceUser) RemoveUser(ctx context.Context, request *pb.RemoveUserRequ
 }
 
 func (s *ServiceUser) UserList(ctx context.Context, request *pb.UserListRequest) (*pb.UserListResponse, error) {
+	filter := request.GetFilter()
+	phone := filter.Phone
+	name := filter.Name
+	login := filter.Login
 
-	return nil,nil
+	userRepository := postgres.NewUserRepo(ctx, s.db, s.logger)
+	resp, err := userRepository.UserList(login, name, phone)
+	if err != nil {
+		return nil, err
+	}
+	result := &pb.UserListResponse{}
 
+	for _, respUser := range resp.User {
+		result.UserList = append(result.UserList, &pb.UserInfo{
+			Id:    int32(respUser.Id),
+			Login: respUser.Login,
+			Name:  respUser.Name,
+			Phone: respUser.Phone,
+		})
+	}
+
+	return result, nil
 }
 func IsPhoneValid(p string) bool {
 	phoneRegex := regexp.MustCompile("^((8|\\+7)[\\- ]?)?(\\(?\\d{3}\\)?[\\- ]?)?[\\d\\- ]{7,10}$")
-if !phoneRegex.MatchString(p) || p == "" {
-return false
-}
+	if !phoneRegex.MatchString(p) || p == "" {
+		return false
+	}
 
-return true
+	return true
 }
