@@ -7,6 +7,7 @@ import (
 )
 
 func StartKafka() {
+
 	conf := kafka.ReaderConfig{
 		Brokers:  []string{"localhost:9092"},
 		Topic:    "idroot",
