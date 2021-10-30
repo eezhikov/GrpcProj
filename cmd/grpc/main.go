@@ -1,6 +1,7 @@
 package main
 
 import (
+	appKafka "UserGrpcProj/kafka"
 	"UserGrpcProj/pkg/user/config"
 	"UserGrpcProj/pkg/user/server"
 	pb "UserGrpcProj/pkg/user/service"
@@ -20,8 +21,6 @@ import (
 
 func main() {
 
-
-
 	logger := zap.New(zapcore.NewCore(
 		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
 		os.Stdout,
@@ -35,19 +34,21 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	if err = MigrateUp("postgres", cfg.DbConn); err != nil{
+	if err = MigrateUp("postgres", cfg.DbConn); err != nil {
 		fmt.Println(err)
 		return
 	}
 	fmt.Println("migrations ok")
-
+	go appKafka.StartKafka()
+	fmt.Println("kafka ok")
+	//time.Sleep(10 * time.Minute)
 	defer db.Close()
 	userService := server.NewUserService(db, logger)
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
 	srv := grpc.NewServer()
 	pb.RegisterUserServer(srv, userService)
 	err = srv.Serve(listener)
-	if err != nil{
+	if err != nil {
 		fmt.Println(err)
 	}
 	//userHandler := server.NewGin(userService)
