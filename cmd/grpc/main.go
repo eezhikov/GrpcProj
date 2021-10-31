@@ -1,16 +1,21 @@
 package main
 
 import (
+	"UserGrpcProj/clickhouse"
+	"go.uber.org/zap"
+
+	//appClickHouse "UserGrpcProj/clickhouse"
 	appKafka "UserGrpcProj/kafka"
+	"UserGrpcProj/kafka/logger"
 	"UserGrpcProj/pkg/user/config"
 	"UserGrpcProj/pkg/user/server"
 	pb "UserGrpcProj/pkg/user/service"
 	"context"
 	"fmt"
+	_ "github.com/ClickHouse/clickhouse-go"
+	"github.com/go-redis/redis/v8"
 	"github.com/jackc/pgx/v4/pgxpool"
 	_ "github.com/lib/pq"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 	"net"
 	"os"
@@ -21,35 +26,51 @@ import (
 
 func main() {
 
-	logger := zap.New(zapcore.NewCore(
-		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
-		os.Stdout,
-		zap.DebugLevel,
-	))
-
 	cfg := config.NewUserConfig()
 	ctx := context.Background()
+
+	chConn, err := clickhouse.NewClickhouseConf()
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	fmt.Println("ClickHouse ok")
+
+	go appKafka.StartKafka(chConn)
+	kafkaLog := logger.NewLogger()
+	fmt.Println("kafka ok")
+
 	db, err := pgxpool.Connect(ctx, cfg.DbConn)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+
 	if err = MigrateUp("postgres", cfg.DbConn); err != nil {
-		fmt.Println(err)
+		kafkaLog.Error("migrations error", zap.Error(err))
 		return
 	}
 	fmt.Println("migrations ok")
-	go appKafka.StartKafka()
-	fmt.Println("kafka ok")
-	//time.Sleep(10 * time.Minute)
 	defer db.Close()
-	userService := server.NewUserService(db, logger)
+
+	cRds := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
+	if err := cRds.Ping(ctx).Err(); err != nil {
+		kafkaLog.Error("can't connect to redis", zap.Error(err))
+		return
+	}
+	defer cRds.Close()
+
+	userService := server.NewUserService(db, kafkaLog, cRds)
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
 	srv := grpc.NewServer()
 	pb.RegisterUserServer(srv, userService)
 	err = srv.Serve(listener)
 	if err != nil {
-		fmt.Println(err)
+		kafkaLog.Error("error", zap.Error(err))
 	}
 	//userHandler := server.NewGin(userService)
 	//userServer := &http.Server{

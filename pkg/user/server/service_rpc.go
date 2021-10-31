@@ -6,10 +6,11 @@ import (
 	"UserGrpcProj/repository/postgres"
 	"context"
 	"errors"
-	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"go.uber.org/zap"
 	"regexp"
+	"time"
 )
 
 type ServiceUser struct {
@@ -17,20 +18,22 @@ type ServiceUser struct {
 
 	db     *pgxpool.Pool
 	logger *zap.Logger
+	cRds   *redis.Client
 }
 
-func NewUserService(db *pgxpool.Pool, logger *zap.Logger) *ServiceUser {
+func NewUserService(db *pgxpool.Pool, logger *zap.Logger, cRds *redis.Client) *ServiceUser {
 	return &ServiceUser{
 		db:     db,
 		logger: logger,
+		cRds:   cRds,
 	}
 }
 func (s *ServiceUser) AddUser(ctx context.Context, request *pb.AddUserRequest) (*pb.AddUserResponse, error) {
 	login := request.GetLogin()
-
 	templ := "^[a-zA-Z0-9]{5,}$"
 	match, err := regexp.MatchString(templ, login)
 	if err != nil {
+		s.logger.Error("error parse login", zap.Error(err))
 		return nil, err
 	}
 	if !match {
@@ -70,9 +73,10 @@ func (s *ServiceUser) AddUser(ctx context.Context, request *pb.AddUserRequest) (
 		Status: ok,
 	}
 	if err != nil {
-		fmt.Println(err)
+		s.logger.Error("error add user", zap.Error(err))
 		return status, err
 	}
+	s.logger.Info("new user was added", zap.String("login", user.Login))
 	return status, nil
 }
 func (s *ServiceUser) RemoveUser(ctx context.Context, request *pb.RemoveUserRequest) (*pb.RemoveUserResponse, error) {
@@ -90,6 +94,7 @@ func (s *ServiceUser) RemoveUser(ctx context.Context, request *pb.RemoveUserRequ
 
 	result, err := userRepository.RemoveUser(int(removeId))
 	if err != nil {
+		s.logger.Error("error delete user", zap.Error(err))
 		return nil, err
 	}
 	status := &pb.RemoveUserResponse{
@@ -99,17 +104,53 @@ func (s *ServiceUser) RemoveUser(ctx context.Context, request *pb.RemoveUserRequ
 }
 
 func (s *ServiceUser) UserList(ctx context.Context, request *pb.UserListRequest) (*pb.UserListResponse, error) {
+
 	filter := request.GetFilter()
-	phone := filter.Phone
-	name := filter.Name
-	login := filter.Login
+	var name, login, phone, filterKey string
+
+	if filter != nil {
+		phone = filter.Phone
+		name = filter.Name
+		login = filter.Login
+		if phone != "" {
+			filterKey += phone
+		}
+		if name != "" {
+			filterKey += name
+		}
+		if login != "" {
+			filterKey += login
+		}
+	}
+	var resp *models.UserList
+	result := &pb.UserListResponse{}
+	if err := s.cRds.Get(ctx, filterKey).Scan(resp); err != nil && err.Error() != "redis: nil" {
+		s.logger.Error("cant get user list by filter_key", zap.Error(err))
+		return nil, err
+	}
+
+	if resp != nil {
+		for _, respUser := range resp.User {
+			result.UserList = append(result.UserList, &pb.UserInfo{
+				Id:    int32(respUser.Id),
+				Login: respUser.Login,
+				Name:  respUser.Name,
+				Phone: respUser.Phone,
+			})
+		}
+		return result, nil
+	}
 
 	userRepository := postgres.NewUserRepo(ctx, s.db, s.logger)
 	resp, err := userRepository.UserList(login, name, phone)
 	if err != nil {
+		s.logger.Error("error get users", zap.Error(err))
 		return nil, err
 	}
-	result := &pb.UserListResponse{}
+	if err := s.cRds.Set(ctx, filterKey, resp, 1*time.Minute).Err(); err != nil {
+		s.logger.Error("cant set user list in redis", zap.Error(err))
+		return nil, err
+	}
 
 	for _, respUser := range resp.User {
 		result.UserList = append(result.UserList, &pb.UserInfo{
