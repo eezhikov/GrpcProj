@@ -45,6 +45,7 @@ func (u *userRepoPostgres) RemoveUser(id int) (bool, error) {
 }
 
 func (u *userRepoPostgres) UserList(login string, name string, phone string) (*models.UserList, error) {
+
 	rows, err := u.db.Query(u.ctx, "SELECT id, login, name, phone FROM users WHERE login ILIKE $1 OR name ILIKE $2 OR phone ILIKE $3", fmt.Sprintf("%s", login), fmt.Sprintf("%s", name), fmt.Sprintln("%s", phone))
 	if err != nil {
 		return nil, err
@@ -52,20 +53,20 @@ func (u *userRepoPostgres) UserList(login string, name string, phone string) (*m
 
 	respUserList := models.UserList{}
 	for rows.Next() {
-		respUser := &models.UserInfo{}
 		var userIdRow sql.NullInt32
-		var userLoginRow, userNameRow, userPhoneRow string
+		var userLoginRow, userNameRow, userPhoneRow sql.NullString
 		if err := rows.Scan(&userIdRow, &userLoginRow, &userNameRow, &userPhoneRow); err != nil {
 			return nil, err
 		}
-		respUser.Id = int(userIdRow.Int32)
-		respUser.Login = userLoginRow
-		respUser.Name = userNameRow
-		respUser.Phone = userPhoneRow
-		respUserList.User = append(respUserList.User, respUser)
+
+		respUserList.User = append(respUserList.User, &models.UserInfo{
+			Id:    int(userIdRow.Int32),
+			Login: userLoginRow.String,
+			Name:  userNameRow.String,
+			Phone: userPhoneRow.String,
+		})
 	}
 
-	fmt.Println(respUserList)
 	return &respUserList, nil
 }
 

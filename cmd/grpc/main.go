@@ -45,13 +45,13 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	defer db.Close()
 
 	if err = MigrateUp("postgres", cfg.DbConn); err != nil {
 		kafkaLog.Error("migrations error", zap.Error(err))
 		return
 	}
 	fmt.Println("migrations ok")
-	defer db.Close()
 
 	cRds := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
